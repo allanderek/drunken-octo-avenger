@@ -395,7 +395,7 @@ registerTest new ChallengeTest
 class UserListTest extends BrowserTest
   names: ['UserListTest', 'users']
   description: "Tests the lists of users, user profiles, and challenge links"
-  numTests: 9
+  numTests: 15
 
   testBody: (test) =>
     allan = "allan"
@@ -433,9 +433,19 @@ class UserListTest extends BrowserTest
       test.assertSelectorHasText \
         'form#challenge-form input[name="opponent"]', karl
     casper.thenClick '#send_challenge', =>
-      casper.waitForSelector '#your_turn_games', =>
+      casper.waitForSelector '#your_turn_games'
       @assertNumGames test, 0, 1
-
+    # Now he goes back to the user list and check's out allan's profile page,
+    # also starting a game against allan.
+    casper.thenClick '#user-list-link', =>
+      casper.thenClick '.user-profile-link[data-username="allan"]', =>
+        test.assertSelectorHasText '.user-profile-title', allan
+    casper.thenClick '.user-challenge-link', =>
+      test.assertSelectorHasText \
+        'form#challenge-form input[name="opponent"]', allan
+    casper.thenClick '#send_challenge', =>
+      casper.waitForSelector '#your_turn_games', =>
+      @assertNumGames test, 0, 2
 
 registerTest new UserListTest
 
