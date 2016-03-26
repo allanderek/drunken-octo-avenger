@@ -1,16 +1,5 @@
 # compute server url from arguments
 
-fs = require('fs')
-
-logFileName = 'generated/casper_tests.log'
-
-do ->
-  oldLog = casper.log
-  casper.log = (message, level, space) ->
-    mySpace = space or ""
-    fs.write logFileName, "[#{level}] [#{mySpace}] #{message}\n", "a"
-    oldLog.call this, message, level, space
-
 defaultHost = "http://localhost"
 host = casper.cli.options['host'] or defaultHost
 port = casper.cli.options['port'] or
@@ -97,9 +86,6 @@ class BrowserTest
   statusGameSelector: (your_turn, first_or_last) ->
     div_id = if your_turn then 'your_turn_games' else 'not_your_turn_games'
     @gameSelector div_id, first_or_last
-
-  firstGameSelector: (your_turn) ->
-    @statusGameSelector your_turn, 'first'
 
   lastGameSelector: (your_turn) ->
     @statusGameSelector your_turn, 'last'
@@ -214,6 +200,13 @@ class BrowserTest
       test.assertEqual actualScore, score,
         "#{color} score should be #{score}, is #{actualScore}"
 
+  registerNewAccount: (username, password, repeat=password) ->
+      casper.fill 'form#new_account_form', {
+        username: username
+        password1: password
+        password2: repeat
+        }, true  # true = submit form
+
 
 class ClientSideJsTest extends BrowserTest
   names: ['ClientSideJsTest', 'qunit', 'client']
@@ -259,12 +252,10 @@ class NativeLoginTest extends BrowserTest
 
     # he sets up a new account
     # at first he gets overenthusiastic and tries to set two different passwords
-    casper.thenClick '#new_account', ->
-      @fill 'form#new_account_form', {
-        username: 'darrenlamb'
-        password1: 'iknowandy'
-        password2: 'imdarrenlamb'
-        }, true  # true = submit form
+    casper.thenClick '#new_account', =>
+      @registerNewAccount 'darrenlamb', 'iknowandy', 'imdarrenlamb'
+
+
     # he is returned to the new account form with an error message
     casper.then =>
       casper.waitForText 'Passwords do not match', =>
@@ -276,12 +267,9 @@ class NativeLoginTest extends BrowserTest
         test.assertDoesntExist '#logout'
 
     # he tries again with matching passwords
-    casper.then ->
-      @fill 'form#new_account_form', {
-        username: 'darrenlamb'
-        password1: 'iknowandy'
-        password2: 'iknowandy'
-        }, true  # true = submit form
+    casper.then =>
+      @registerNewAccount 'darrenlamb', 'iknowandy'
+
     # Darren is automatically logged in
     casper.waitForSelector '#logout', ->
       # the next page has a logout button
@@ -404,10 +392,58 @@ class ChallengeTest extends BrowserTest
 registerTest new ChallengeTest
 
 
+class UserListTest extends BrowserTest
+  names: ['UserListTest', 'users']
+  description: "Tests the lists of users, user profiles, and challenge links"
+  numTests: 9
+
+  testBody: (test) =>
+    allan = "allan"
+    karl = "karl"
+    batman = "batman"
+
+    deleteUser allan
+    deleteUser karl
+    deleteUser batman
+    clearGamesForPlayer p for p in [allan, karl, batman]
+
+    # allan
+
+    casper.thenOpen serverUrl, ->
+      if casper.exists '#logout'
+        casper.click '#logout'
+      casper.waitForSelector '#new_account', ->
+        test.assertExists '#new_account'
+    casper.thenClick '#new_account', =>
+      @registerNewAccount allan, 'insecure'
+      casper.waitForSelector '#logout'
+    casper.thenClick '#logout'
+    casper.thenClick '#new_account', =>
+      @registerNewAccount karl, 'alsoinsecure'
+    casper.thenClick '#logout'
+    casper.thenClick '#new_account', =>
+      @registerNewAccount batman, 'LKJ;lkjaskasdflkew932qa2oir3laksdj'
+
+    casper.thenClick '#user-list-link', =>
+      # Batman should be able to see all three users.
+      for name in [allan, karl, batman]
+        test.assertExists ".user-profile-link[data-username=\"#{name}\"]"
+    # Now batman is going to challenge karl to a match
+    casper.thenClick '.user-challenge-link[data-username="karl"]', =>
+      test.assertSelectorHasText \
+        'form#challenge-form input[name="opponent"]', karl
+    casper.thenClick '#send_challenge', =>
+      casper.waitForSelector '#your_turn_games', =>
+      @assertNumGames test, 0, 1
+
+
+registerTest new UserListTest
+
+
 class PlaceStonesTest extends BrowserTest
-  names: ['PlaceStonesTest', 'place']
+  names: ['PlaceStonesTest']
   description: "Test Placing Stones"
-  numTests: 19
+  numTests: 18
   testBody: (test) =>
     ONE_EMAIL = 'player@one.com'
     TWO_EMAIL = 'playa@dos.es'
@@ -437,8 +473,6 @@ class PlaceStonesTest extends BrowserTest
       # no (usable) submit button appears yet
       test.assertDoesntExist '.submit_button:enabled',
                              'no usable submit button appears'
-      test.assertDoesntExist '.submit_and_next_game_button:enabled',
-                             'no usable submit (-> next game) button appears'
 
       # the 3x3 block at top left is as we specified
       @assertPointIsEmpty test, 0, 0
@@ -670,90 +704,6 @@ class GameInterfaceTest extends BrowserTest
 registerTest new GameInterfaceTest
 
 
-class SubmitAndNextGameTest extends BrowserTest
-  names: ['SubmitAndNextGameTest', 'nextgame']
-  description: "'Submit and go to next game' button"
-  numTests: 0
-  testBody: (test) =>
-    EMAILS = ['hero@zero.com',
-              'player@one.com',
-              'playa@dos.es',
-              'plagxo@tri.eo']
-    [HERO, P1, P2, P3] = EMAILS
-    clearGamesForPlayer p for p in EMAILS
-    createGame HERO, P1
-    createGame P2, HERO
-    createGame P3, HERO
-
-    # convenience function
-    goToGame = (email, thenFn=(->)) =>
-      createLoginSession email
-      casper.thenOpen serverUrl
-      casper.thenClick (@lastGameSelector true), thenFn  # true = our turn
-
-    goToHeroFirstGame = (thenFn=(->)) =>
-      createLoginSession HERO
-      casper.thenOpen serverUrl
-      casper.thenClick (@firstGameSelector true), thenFn
-
-    # two makes a move, then shortly after, three makes a move
-    goToGame P2
-    casper.thenClick (pointSelector 3, 3)
-    casper.thenClick '.submit_button'
-    casper.wait 50
-    goToGame P3
-    casper.thenClick (pointSelector 3, 3)
-    casper.thenClick '.submit_button'
-    # now when hero moves against P1...
-    goToHeroFirstGame()
-    casper.thenClick (pointSelector 3, 3)
-    casper.thenClick '.submit_and_next_game_button', ->
-      # she lands on the game against P2, who moved least recently
-      test.assertSelectorHasText '#match-info', P2,
-        "hero lands on P2's game after playing a move against P1"
-
-    # hero moves in P2 and P3's games, and P1 moves in his game,
-    # leaving the same players to play as when we started
-    casper.thenClick (pointSelector 15, 15)
-    casper.thenClick '.submit_and_next_game_button', ->
-      test.assertSelectorHasText '#match-info', P3,
-        "hero lands on P3's game after playing a move against P2"
-    casper.thenClick (pointSelector 15, 15)
-    casper.thenClick '.submit_and_next_game_button'
-    goToGame P1
-    casper.thenClick (pointSelector 15, 15)
-    casper.thenClick '.submit_and_next_game_button'
-
-    # this time P3 and P2 move in the opposite order:
-    # three makes a move, then shortly after, two makes a move
-    goToGame P3
-    casper.thenClick (pointSelector 9, 9)
-    casper.thenClick '.submit_button'
-    casper.wait 50
-    goToGame P2
-    casper.thenClick (pointSelector 9, 9)
-    casper.thenClick '.submit_button'
-    # now when hero moves against P1...
-    goToHeroFirstGame()
-    casper.thenClick (pointSelector 9, 9)
-    casper.thenClick '.submit_and_next_game_button', ->
-      # she lands on the game against P3, who moved least recently
-      test.assertSelectorHasText '#match-info', P3,
-        "hero lands on P3's game after playing a move against P1"
-
-    # and after moving against P3 and P2...
-    casper.thenClick (pointSelector 4, 15)
-    casper.thenClick '.submit_and_next_game_button', ->
-      test.assertSelectorHasText '#match-info', P2
-    casper.thenClick (pointSelector 4, 15)
-    casper.thenClick '.submit_and_next_game_button', ->
-      # she lands back at the status page as no games are pending
-      test.assertExists '#your_turn_games',
-        "hero lands on status page after playing a move against P2"
-
-registerTest new SubmitAndNextGameTest
-
-
 class PassAndScoringTest extends BrowserTest
   names: ['PassAndScoringTest', 'pass', 'score', 'scoring']
   description: "pass moves and scoring system"
@@ -934,13 +884,9 @@ class PassAndScoringTest extends BrowserTest
         white: 7
     casper.thenClick (pointSelector 3, 0)
     casper.thenClick '.submit_button'
-    goToGame BLACK_EMAIL, ->
-      formTarget = casper.getElementAttribute '#main_form', 'action'
-      casper.log "main form will post to #{formTarget}", "debug"
+    goToGame BLACK_EMAIL
     # finally, Black accepts White's proposal
     casper.thenClick '.submit_button'
-    casper.then ->
-      casper.log "submit clicked", "debug"
 
     # game is now finished
     casper.thenOpen serverUrl, =>
@@ -964,15 +910,9 @@ class ResignTest extends BrowserTest
     createLoginSession BLACK_EMAIL
     casper.thenOpen serverUrl
     casper.thenClick (@lastGameSelector true) # true = our turn
-    casper.then ->
-      # log the form's POST target in case of random test failure
-      formTarget = casper.getElementAttribute '#main_form', 'action'
-      casper.log "main form will post to #{formTarget}", "debug"
-    casper.thenClick '#resign-button'  # Click the resign button
-    casper.waitUntilVisible '.confirm-resign-button', ->
+    casper.thenClick '#resign-button', -> # Click the resign button
       test.assertVisible '.confirm-resign-button'
       casper.thenClick '.confirm-resign-button'
-
     # the game is no longer visible on Black's status page
     casper.thenOpen serverUrl, =>
       test.assertDoesntExist (@lastGameSelector true),
@@ -1016,9 +956,7 @@ class FinishedGamesTest extends BrowserTest
         blackscore: 117 - 18
         whitescore: 89 - 14
     casper.thenClick '.submit_button'
-    goToGame WHITE_EMAIL, ->
-      formTarget = casper.getElementAttribute '#main_form', 'action'
-      casper.log "main form will post to #{formTarget}", "debug"
+    goToGame WHITE_EMAIL
     casper.thenClick '.submit_button'
 
     casper.thenOpen serverUrl
@@ -1104,4 +1042,4 @@ else
   runAll()
 
 casper.run ->
-  casper.exit()
+  casper.log "shutting down ..."
