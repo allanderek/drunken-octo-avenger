@@ -398,9 +398,9 @@ class UserListTest extends BrowserTest
   numTests: 15
 
   testBody: (test) =>
-    allan = "allan"
-    karl = "karl"
-    batman = "batman"
+    allan = "allanxlkadsf9120293"
+    karl = "karlasdlkjsad0f932"
+    batman = "batmanlkasjdfwa0932"
 
     deleteUser allan
     deleteUser karl
@@ -429,7 +429,7 @@ class UserListTest extends BrowserTest
       for name in [allan, karl, batman]
         test.assertExists ".user-profile-link[data-username=\"#{name}\"]"
     # Now batman is going to challenge karl to a match
-    casper.thenClick '.user-challenge-link[data-username="karl"]', =>
+    casper.thenClick ".user-challenge-link[data-username=\"#{karl}\"]", =>
       test.assertSelectorHasText \
         'form#challenge-form input[name="opponent"]', karl
     casper.thenClick '#send_challenge', =>
@@ -438,7 +438,7 @@ class UserListTest extends BrowserTest
     # Now he goes back to the user list and check's out allan's profile page,
     # also starting a game against allan.
     casper.thenClick '#user-list-link', =>
-      casper.thenClick '.user-profile-link[data-username="allan"]', =>
+      casper.thenClick ".user-profile-link[data-username=\"#{allan}\"]", =>
         test.assertSelectorHasText '.user-profile-title', allan
     casper.thenClick '.user-challenge-link', =>
       test.assertSelectorHasText \
