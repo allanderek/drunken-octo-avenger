@@ -1,5 +1,6 @@
 import os
 import subprocess
+import errno
 
 import flask
 from flask.ext.migrate import Migrate, MigrateCommand
@@ -160,7 +161,11 @@ def run_with_test_server(test_command, coverage, accumulate):
     # We could check the return from this is success.
     port = app.config['TESTSERVER_PORT']
     requests.post('http://localhost:{}/shutdown'.format(port))
-    server_return_code = server.wait(timeout=90)
+    try:
+        server_return_code = server.wait(timeout=90)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        server_return_code = errno.ETIME
     if coverage:
         os.system("coverage report -m")
         os.system("coverage html")
